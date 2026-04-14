@@ -38,7 +38,9 @@ export async function POST(request: NextRequest) {
     const raw =
       message.content[0].type === "text" ? message.content[0].text : "";
 
-    const parsed = JSON.parse(raw);
+    // Strip markdown code fences if the model wraps the JSON
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const parsed = JSON.parse(cleaned);
 
     // Validate and clamp values
     const coords: [number, number] = [

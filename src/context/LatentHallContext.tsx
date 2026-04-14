@@ -13,7 +13,6 @@ import {
   useContext,
   useEffect,
   useReducer,
-  useRef,
   type Dispatch,
 } from "react";
 import type { TruthNode, TruthEdge, Bridge } from "@/lib/types";
@@ -139,13 +138,22 @@ interface ContextValue {
 const LatentHallContext = createContext<ContextValue | null>(null);
 
 export function LatentHallProvider({ children }: { children: React.ReactNode }) {
-  const initialNodes = loadNodes();
+  // Always start empty so server and client initial renders match (no hydration mismatch).
+  // localStorage is loaded in a useEffect after mount.
   const [state, dispatch] = useReducer(reducer, {
-    nodes: initialNodes,
-    edges: computeEdges(initialNodes),
+    nodes: [],
+    edges: [],
     bridges: {},
     activeEdgeId: null,
   });
+
+  // Hydrate from localStorage once on mount
+  useEffect(() => {
+    const saved = loadNodes();
+    if (saved.length > 0) {
+      dispatch({ type: "SEED_NODES", nodes: saved });
+    }
+  }, []);
 
   // Persist nodes on every change
   useEffect(() => {

@@ -7,7 +7,7 @@
  * Animates in with Framer Motion and clears after submission.
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Lock } from "lucide-react";
 import { useLatentHall } from "@/context/LatentHallContext";
@@ -24,9 +24,10 @@ export default function TruthInput() {
   const { submitTruth } = useLatentHall();
   const [value, setValue] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [placeholderIdx] = useState(
-    () => Math.floor(Math.random() * PLACEHOLDER_CYCLE.length)
-  );
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
+  useEffect(() => {
+    setPlaceholderIdx(Math.floor(Math.random() * PLACEHOLDER_CYCLE.length));
+  }, []);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const canSubmit = value.trim().length > 3 && value.length <= MAX_CHARS;
