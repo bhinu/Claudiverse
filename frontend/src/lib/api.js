@@ -26,6 +26,7 @@ export const api = {
   getStudents: () => request('/students'),
   getStudent: (id) => request(`/students/${id}`),
   onboard: (data) => request('/students/onboard', { method: 'POST', body: data }),
+  updateSchedule: (id, data) => request(`/students/${id}/schedule`, { method: 'PUT', body: data }),
   getReadiness: (id) => request(`/students/${id}/readiness`),
 
   // Suggestions

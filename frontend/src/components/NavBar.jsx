@@ -2,9 +2,9 @@ import { NavLink, useLocation } from 'react-router-dom';
 
 export default function NavBar() {
   const location = useLocation();
-  const isDashboard = location.pathname === '/dashboard';
+  const hideNav = ['/dashboard', '/onboarding'].includes(location.pathname);
 
-  if (isDashboard) return null;
+  if (hideNav) return null;
 
   return (
     <nav className="nav-bar">

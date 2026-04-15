@@ -8,6 +8,7 @@ export default function Home() {
   const studentName = localStorage.getItem('anchor_student_name');
   const [student, setStudent] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
+  const [anchors, setAnchors] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,15 +19,17 @@ export default function Home() {
 
     Promise.all([
       api.getStudent(studentId).catch(() => null),
-      api.getStudentSuggestions(studentId).catch(() => [])
-    ]).then(([s, sug]) => {
+      api.getStudentSuggestions(studentId).catch(() => []),
+      api.getStudentAnchors(studentId).catch(() => [])
+    ]).then(([s, sug, anch]) => {
       setStudent(s);
       setSuggestions(sug);
+      setAnchors(anch);
       setLoading(false);
     });
   }, [studentId]);
 
-  // Not onboarded yet
+  // Not onboarded yet — show landing page with demo students
   if (!studentId) {
     return (
       <div className="animate-in" style={{ marginTop: '64px', textAlign: 'center' }}>
@@ -71,7 +74,7 @@ export default function Home() {
   }
 
   const pendingSuggestion = suggestions.find(s => s.status === 'pending');
-  const riskBadge = student?.anchor_risk_state;
+  const hasAnchors = anchors.length > 0;
 
   return (
     <div className="animate-in">
@@ -80,29 +83,31 @@ export default function Home() {
         <h1>{studentName || student?.name || 'Student'}</h1>
       </div>
 
-      {/* Next best thing */}
-      {riskBadge === 'high' && !pendingSuggestion && (
-        <div className="card card-accent animate-in stagger-1" style={{ cursor: 'pointer' }} onClick={() => navigate('/readiness', { state: { studentId } })}>
-          <p className="text-accent" style={{ fontWeight: 500, marginBottom: '4px', fontSize: '0.85rem' }}>Recommended</p>
-          <h3>Find your first anchor</h3>
-          <p style={{ marginTop: '4px' }}>Let's look at your routine and find the easiest starting point.</p>
-        </div>
-      )}
-
+      {/* Pending suggestion card */}
       {pendingSuggestion && (
         <div className="card card-accent animate-in stagger-1" style={{ cursor: 'pointer' }} onClick={() => navigate('/action', { state: { studentId } })}>
-          <p className="text-accent" style={{ fontWeight: 500, marginBottom: '4px', fontSize: '0.85rem' }}>Pending</p>
+          <p className="text-accent" style={{ fontWeight: 500, marginBottom: '4px', fontSize: '0.85rem' }}>Pending suggestion</p>
           <h3>{pendingSuggestion.invitation_title || 'You have a suggestion'}</h3>
           <p style={{ marginTop: '4px' }}>{pendingSuggestion.invitation_body || 'Tap to see details.'}</p>
         </div>
       )}
 
-      {!riskBadge || (riskBadge !== 'high' && !pendingSuggestion) ? (
+      {/* Find your anchor — always available if no anchors yet */}
+      {!hasAnchors && !pendingSuggestion && (
+        <div className="card card-accent animate-in stagger-1" style={{ cursor: 'pointer' }} onClick={() => navigate('/action', { state: { studentId } })}>
+          <p className="text-accent" style={{ fontWeight: 500, marginBottom: '4px', fontSize: '0.85rem' }}>Recommended</p>
+          <h3>Find your first anchor</h3>
+          <p style={{ marginTop: '4px' }}>We will look at your routine and find the easiest starting point.</p>
+        </div>
+      )}
+
+      {/* Check for new anchors — if they already have some */}
+      {hasAnchors && !pendingSuggestion && (
         <div className="card animate-in stagger-1" style={{ cursor: 'pointer' }} onClick={() => navigate('/action', { state: { studentId } })}>
           <h3>Check for new anchors</h3>
           <p style={{ marginTop: '4px' }}>See if there is a good fit for your routine this week.</p>
         </div>
-      ) : null}
+      )}
 
       {/* Quick links */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '16px' }}>
