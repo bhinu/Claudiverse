@@ -9,21 +9,77 @@ import { computePlacement } from '../ai/placementEngine.js';
 
 const router = Router();
 
+/**
+ * Preflight validation: check that all required inputs exist
+ * before attempting full anchor generation.
+ */
+function preflightValidation(student) {
+  const missing = [];
+  const courses = JSON.parse(student.academic_contexts || '[]');
+  const schedule = JSON.parse(student.schedule_blocks || '[]');
+
+  if (!courses.length) missing.push('class_selection');
+
+  const hasTime = courses.some(c => c.time);
+  if (!hasTime) missing.push('class_time');
+
+  const hasBuilding = courses.some(c => c.building);
+  if (!hasBuilding) missing.push('location_zone');
+
+  if (!schedule.length && !courses.some(c => c.days?.length)) {
+    missing.push('schedule_days');
+  }
+
+  const prefs = JSON.parse(student.interaction_preferences || '{}');
+  if (!prefs.format) missing.push('format_preference');
+
+  return missing;
+}
+
 // Generate a new anchor suggestion for a student (Screen 3)
-router.post('/generate', async (req, res, next) => {
+router.post('/generate', async (req, res) => {
+  const { student_id } = req.body;
+
+  if (!student_id) {
+    return res.json({
+      status: 'missing_required_data',
+      missing_fields: ['student_id'],
+      suggestion: null
+    });
+  }
+
+  const db = getDb();
+  const student = db.prepare('SELECT * FROM students WHERE id = ?').get(student_id);
+
+  if (!student) {
+    return res.json({
+      status: 'missing_required_data',
+      missing_fields: ['student_id'],
+      suggestion: null
+    });
+  }
+
+  // Step 0: Preflight validation
+  const missingFields = preflightValidation(student);
+  if (missingFields.length > 0) {
+    return res.json({
+      status: 'missing_required_data',
+      missing_fields: missingFields,
+      suggestion: null
+    });
+  }
+
   try {
-    const { student_id } = req.body;
-    if (!student_id) return res.status(400).json({ error: 'student_id is required' });
-
-    const db = getDb();
-    const student = db.prepare('SELECT * FROM students WHERE id = ?').get(student_id);
-    if (!student) return res.status(404).json({ error: 'Student not found' });
-
     // Step 1: Find routine hooks
     const hookResult = await findRoutineHooks(student);
     const bestHook = hookResult.candidate_hooks?.[0];
+
     if (!bestHook) {
-      return res.json({ suggestion: null, message: 'No suitable routine hooks found yet. Try updating your schedule.' });
+      return res.json({
+        status: 'no_anchor_for_class',
+        reason: 'no_routine_hooks',
+        suggestion: null
+      });
     }
 
     // Step 2: Find candidate peers (students with overlapping courses)
@@ -36,7 +92,11 @@ router.post('/generate', async (req, res, next) => {
     });
 
     if (candidatePeers.length === 0) {
-      return res.json({ suggestion: null, message: 'Looking for students in your classes. Check back soon.' });
+      return res.json({
+        status: 'no_anchor_for_class',
+        reason: 'no_peer_overlap',
+        suggestion: null
+      });
     }
 
     // Step 3: Compose match via AI
@@ -48,39 +108,35 @@ router.post('/generate', async (req, res, next) => {
       .map(pid => pid === student_id ? student : allStudents.find(s => s.id === pid))
       .filter(Boolean);
 
-    // Compute gap minutes from the hook
     const gapMinutes = bestHook.duration_minutes ? bestHook.duration_minutes + 10 : 25;
-
     const placement = await computePlacement(matchedParticipants, bestHook, gapMinutes);
 
-    // If placement needs clarification, return that instead
+    // If placement needs clarification, return as missing data
     if (placement.clarification_needed) {
       return res.json({
-        suggestion: null,
-        clarification_needed: true,
+        status: 'missing_required_data',
+        missing_fields: ['location_zone'],
         clarification_prompt: placement.clarification_prompt,
-        message: placement.clarification_prompt
+        suggestion: null
       });
     }
 
-    // Use placement location instead of generic hook location
+    // Step 5: Generate invitation
     const finalLocation = placement.recommended_location || bestHook.location || 'TBD';
-
-    // Step 5: Generate invitation via AI — now with placement context
     const invitation = await generateInvitation(
       { ...matchResult, location: finalLocation, placement },
       { ...bestHook, location: finalLocation },
       bestHook.hook_type === 'post_class_gap' ? 'recap' : 'study'
     );
 
-    // Step 6: Plan continuity via AI
+    // Step 6: Plan continuity
     const continuity = await planContinuity(
       { hook: bestHook, match: matchResult, purpose: 'recap', location: finalLocation },
       { day: bestHook.day, time: bestHook.time, context: bestHook.context },
       { format: matchResult.match_type, participants: matchResult.participant_ids?.length || 2 }
     );
 
-    // Save suggestion with placement data
+    // Save suggestion
     const suggestionId = `sug-${randomUUID().slice(0, 8)}`;
     db.prepare(`
       INSERT INTO suggestions (id, student_id, routine_hook, participants, purpose, location,
@@ -107,7 +163,8 @@ router.post('/generate', async (req, res, next) => {
 
     const suggestion = db.prepare('SELECT * FROM suggestions WHERE id = ?').get(suggestionId);
 
-    res.json({
+    return res.json({
+      status: 'anchor_ready',
       suggestion: {
         ...suggestion,
         routine_hook: JSON.parse(suggestion.routine_hook || '{}'),
@@ -122,9 +179,30 @@ router.post('/generate', async (req, res, next) => {
       continuity
     });
   } catch (err) {
-    next(err);
+    console.error(`[ANCHOR_GENERATION_ERROR] ${err.message}`, err.stack);
+
+    return res.json({
+      status: 'service_error',
+      error_code: classifyError(err),
+      suggestion: null
+    });
   }
 });
+
+/**
+ * Classify an error into a safe error code.
+ * Never exposes raw error messages to the client.
+ */
+function classifyError(err) {
+  const msg = (err.message || '').toLowerCase();
+
+  if (msg.includes('timeout') || msg.includes('timed out')) return 'ANCHOR_FETCH_TIMEOUT';
+  if (msg.includes('econnrefused') || msg.includes('enotfound')) return 'AI_SERVICE_UNREACHABLE';
+  if (msg.includes('rate') || msg.includes('429')) return 'AI_RATE_LIMITED';
+  if (msg.includes('openai') || msg.includes('azure')) return 'AI_SERVICE_ERROR';
+  if (msg.includes('sqlite') || msg.includes('database')) return 'DATABASE_ERROR';
+  return 'INTERNAL_ERROR';
+}
 
 // Accept a suggestion (creates an interaction)
 router.post('/:id/accept', (req, res, next) => {
@@ -178,7 +256,6 @@ router.post('/:id/closer-spot', async (req, res, next) => {
     const placement = JSON.parse(suggestion.placement_data || '{}');
 
     if (placement.fallback_location) {
-      // Use the pre-computed fallback
       db.prepare('UPDATE suggestions SET location = ?, placement_data = ?, updated_at = datetime(\'now\') WHERE id = ?')
         .run(
           placement.fallback_location,
