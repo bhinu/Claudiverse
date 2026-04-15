@@ -62,3 +62,13 @@ export interface Bridge {
   question: string;
   loading: boolean;
 }
+
+export interface BridgeMessage {
+  id: string;
+  bridgeId: string;
+  authorId: string;
+  authorName: string;
+  authorColor: string;
+  text: string;
+  createdAt: number;
+}

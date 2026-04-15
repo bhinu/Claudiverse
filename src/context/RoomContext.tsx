@@ -14,7 +14,7 @@ import {
   createContext, useCallback, useContext, useEffect,
   useReducer, useRef, useState,
 } from "react";
-import type { Message, Room, TruthEdge, Bridge, Identity } from "@/lib/types";
+import type { Message, Room, TruthEdge, Bridge, BridgeMessage, Identity } from "@/lib/types";
 import { computeEdges } from "@/lib/similarity";
 import { getOrCreateIdentity } from "@/lib/identity";
 
@@ -28,6 +28,7 @@ interface State {
   edges: TruthEdge[];
   bridges: Record<string, Bridge>;
   activeEdgeId: string | null;
+  bridgeChats: Record<string, BridgeMessage[]>;
 }
 
 type Action =
@@ -38,7 +39,9 @@ type Action =
   | { type: "SET_BRIDGE_LOADING"; edgeId: string }
   | { type: "SET_BRIDGE"; edgeId: string; question: string }
   | { type: "OPEN_MODAL"; edgeId: string }
-  | { type: "CLOSE_MODAL" };
+  | { type: "CLOSE_MODAL" }
+  | { type: "SET_BRIDGE_MESSAGES"; bridgeId: string; messages: BridgeMessage[] }
+  | { type: "APPEND_BRIDGE_MESSAGE"; bridgeId: string; message: BridgeMessage };
 
 function toNodes(messages: Message[]) {
   return messages
@@ -97,6 +100,21 @@ function reducer(state: State, action: Action): State {
       return { ...state, activeEdgeId: action.edgeId };
     case "CLOSE_MODAL":
       return { ...state, activeEdgeId: null };
+    case "SET_BRIDGE_MESSAGES":
+      return {
+        ...state,
+        bridgeChats: { ...state.bridgeChats, [action.bridgeId]: action.messages },
+      };
+    case "APPEND_BRIDGE_MESSAGE": {
+      const existing = state.bridgeChats[action.bridgeId] ?? [];
+      return {
+        ...state,
+        bridgeChats: {
+          ...state.bridgeChats,
+          [action.bridgeId]: [...existing, action.message],
+        },
+      };
+    }
     default:
       return state;
   }
@@ -110,6 +128,7 @@ interface ContextValue {
   postTruth: (text: string) => void;
   resonate: (messageId: string) => void;
   clickEdge: (edgeId: string) => void;
+  postBridgeMessage: (bridgeId: string, text: string) => void;
   dispatch: React.Dispatch<Action>;
 }
 
@@ -119,7 +138,7 @@ const RoomContext = createContext<ContextValue | null>(null);
 
 export function RoomProvider({ roomId, children }: { roomId: string; children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, {
-    room: null, messages: [], edges: [], bridges: {}, activeEdgeId: null,
+    room: null, messages: [], edges: [], bridges: {}, activeEdgeId: null, bridgeChats: {},
   });
   const [identity, setIdentity] = useState<Identity>({
     id: "loading", name: "…", color: "#94a3b8",
@@ -237,8 +256,50 @@ export function RoomProvider({ roomId, children }: { roomId: string; children: R
       );
   }, []);
 
+  // ── Bridge chat polling (while a modal is open) ───────────────────────────
+  useEffect(() => {
+    const edgeId = stateRef.current.activeEdgeId;
+    if (!edgeId || !roomId) return;
+    const capturedEdgeId = edgeId;
+
+    async function pollChat() {
+      const res = await fetch(`/api/room/${roomId}/bridge/${capturedEdgeId}`).catch(() => null);
+      if (!res?.ok) return;
+      const data = await res.json();
+      dispatch({ type: "SET_BRIDGE_MESSAGES", bridgeId: capturedEdgeId, messages: data.messages });
+    }
+
+    pollChat();
+    const id = setInterval(pollChat, 2000);
+    return () => clearInterval(id);
+  }, [roomId, state.activeEdgeId]);
+
+  // ── Post bridge chat message ───────────────────────────────────────────────
+  const postBridgeMessage = useCallback(
+    (bridgeId: string, text: string) => {
+      const { id, name, color } = identityRef.current;
+      const optimistic: BridgeMessage = {
+        id: `tmp-${Date.now()}`,
+        bridgeId,
+        authorId: id,
+        authorName: name,
+        authorColor: color,
+        text,
+        createdAt: Date.now(),
+      };
+      dispatch({ type: "APPEND_BRIDGE_MESSAGE", bridgeId, message: optimistic });
+
+      fetch(`/api/room/${roomId}/bridge/${bridgeId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, authorId: id, authorName: name, authorColor: color }),
+      }).catch(console.error);
+    },
+    [roomId]
+  );
+
   return (
-    <RoomContext.Provider value={{ state, identity, postTruth, resonate, clickEdge, dispatch }}>
+    <RoomContext.Provider value={{ state, identity, postTruth, resonate, clickEdge, postBridgeMessage, dispatch }}>
       {children}
     </RoomContext.Provider>
   );

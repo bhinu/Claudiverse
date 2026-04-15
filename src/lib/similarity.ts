@@ -19,7 +19,7 @@ function toSimilarity(dist: number): number {
  * Recompute all edges from a list of positioned nodes.
  * Only creates edges above the similarity threshold to avoid visual noise.
  */
-export function computeEdges(nodes: EdgeNode[], threshold = 0.78): TruthEdge[] {
+export function computeEdges(nodes: EdgeNode[], threshold = 0.62): TruthEdge[] {
   const live = nodes.filter((n) => !n.pending);
   const edges: TruthEdge[] = [];
 

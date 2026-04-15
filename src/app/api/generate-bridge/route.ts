@@ -3,16 +3,16 @@ import { NextRequest } from "next/server";
 
 const client = new Anthropic();
 
-const SYSTEM_PROMPT = `You are a dialogue facilitator for "The Latent Hall," an anonymous empathy tool used in diverse lecture halls.
+const SYSTEM_PROMPT = `You generate casual conversation starters for college students who share something in common.
 
-Given two anonymous unspoken truths from different people in the same room, your job is to generate a single "Steelman Icebreaker" — a short, open question that:
-1. Finds the deepest common human value underneath both truths (not a superficial similarity)
-2. Is phrased so that EITHER person could answer it authentically
-3. Opens space for vulnerability without assuming agreement or alignment
-4. Never references politics, religion, or group identities
-5. Sounds like something a thoughtful, empathetic friend would ask
+Given two things two anonymous students posted in the same lecture hall, write ONE short question that could spark a real conversation between them. Rules:
+- Sound like a chill classmate asking, not a therapist or life coach
+- Keep it casual, specific, and grounded — no philosophical or abstract language
+- Under 15 words
+- No "What does it mean to you..." or "How does that make you feel..." type questions
+- Think: something you'd actually text a friend, not something from a TED talk
 
-Respond ONLY with the question itself. No explanation, no quotes, no punctuation at the end.`;
+Respond ONLY with the question. No quotes, no explanation.`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,14 +42,13 @@ export async function POST(request: NextRequest) {
     const question =
       message.content[0].type === "text"
         ? message.content[0].text.trim()
-        : "What's one thing you wish someone in this room truly understood about you?";
+        : "What's your take on that?";
 
     return Response.json({ question });
   } catch (err) {
     console.error("[generate-bridge]", err);
     return Response.json({
-      question:
-        "What's one thing you carry quietly that you wish someone here could understand?",
+      question: "Have you two ever talked about this?",
     });
   }
 }

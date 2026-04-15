@@ -53,13 +53,17 @@ interface GNode {
 }
 interface GLink { id: string; source: string; target: string; similarity: number; }
 
-function toGNodes(messages: Message[]): GNode[] {
+function toGNodes(messages: Message[], dims: { width: number; height: number }): GNode[] {
+  const pad = 0.12;
+  const usableW = dims.width * (1 - 2 * pad);
+  const usableH = dims.height * (1 - 2 * pad);
   return messages
     .filter((m) => m.coords !== null)
     .map((m) => ({
       id: m.id, text: m.text, authorName: m.authorName, authorColor: m.authorColor,
       sentiment: m.sentiment, category: m.category, pending: m.pending,
-      fx: m.coords![0], fy: m.coords![1],
+      fx: dims.width * pad + (m.coords![0] / 100) * usableW,
+      fy: dims.height * pad + (m.coords![1] / 100) * usableH,
     }));
 }
 
@@ -93,7 +97,7 @@ export default function ForceGraphMap() {
   }, []);
 
   const graphData = {
-    nodes: toGNodes(state.messages),
+    nodes: toGNodes(state.messages, dims),
     links: toGLinks(state.edges),
   };
 
@@ -103,15 +107,15 @@ export default function ForceGraphMap() {
       const x = node.x ?? 0;
       const y = node.y ?? 0;
       const color = sentimentColor(node.sentiment, node.pending);
-      const baseR = node.pending ? 3.5 : 5.5;
-      const pulse = node.pending ? 1 + 0.25 * Math.sin((Date.now() / 500) * Math.PI) : 1;
+      const baseR = node.pending ? 3 : 4.5;
+      const pulse = node.pending ? 1 + 0.2 * Math.sin((Date.now() / 500) * Math.PI) : 1;
       const r = baseR * pulse;
 
       // Aura
-      const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
-      grd.addColorStop(0, glowRgba(color, 0.55));
+      const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 3.8);
+      grd.addColorStop(0, glowRgba(color, 0.4));
       grd.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.beginPath(); ctx.arc(x, y, r * 4, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(x, y, r * 3.8, 0, Math.PI * 2);
       ctx.fillStyle = grd; ctx.fill();
 
       // Core
@@ -120,9 +124,9 @@ export default function ForceGraphMap() {
 
       // Author dot ring
       if (!node.pending) {
-        ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, Math.PI * 2);
-        ctx.strokeStyle = `${node.authorColor}66`;
-        ctx.lineWidth = 1; ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, r + 1, 0, Math.PI * 2);
+        ctx.strokeStyle = `${node.authorColor}44`;
+        ctx.lineWidth = 0.75; ctx.stroke();
       }
 
       // Category label
@@ -145,17 +149,17 @@ export default function ForceGraphMap() {
 
     // Gradient line
     const grd = ctx.createLinearGradient(src.x, src.y, tgt.x, tgt.y);
-    const alpha = 0.25 + link.similarity * 0.55;
-    grd.addColorStop(0, `rgba(34,211,238,${alpha})`);
-    grd.addColorStop(1, `rgba(167,139,250,${alpha})`);
+    const alpha = 0.45 + link.similarity * 0.45;
+    grd.addColorStop(0, `rgba(251,146,60,${alpha})`);   // orange-400
+    grd.addColorStop(1, `rgba(234,179,8,${alpha})`);    // yellow-500
 
     ctx.beginPath();
     ctx.moveTo(src.x, src.y);
     ctx.lineTo(tgt.x, tgt.y);
     ctx.strokeStyle = grd;
-    ctx.lineWidth = 0.5 + link.similarity * 2.5;
-    ctx.shadowColor = "rgba(34,211,238,0.5)";
-    ctx.shadowBlur = 8;
+    ctx.lineWidth = 1 + link.similarity * 2.5;
+    ctx.shadowColor = "rgba(251,146,60,0.7)";
+    ctx.shadowBlur = 10;
     ctx.stroke();
     ctx.shadowBlur = 0;
   }, []);
@@ -209,6 +213,17 @@ export default function ForceGraphMap() {
           ctx.beginPath();
           ctx.arc(node.x ?? 0, node.y ?? 0, 12, 0, Math.PI * 2);
           ctx.fill();
+        }) as never}
+        linkPointerAreaPaint={((link: GLink, color: string, ctx: CanvasRenderingContext2D) => {
+          const src = link.source as unknown as GNode;
+          const tgt = link.target as unknown as GNode;
+          if (src?.x == null || tgt?.x == null || src?.y == null || tgt?.y == null) return;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 12; // wide invisible hit area
+          ctx.beginPath();
+          ctx.moveTo(src.x, src.y);
+          ctx.lineTo(tgt.x, tgt.y);
+          ctx.stroke();
         }) as never}
       />
     </div>

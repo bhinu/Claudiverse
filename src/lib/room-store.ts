@@ -11,10 +11,35 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Room, Message } from "./types";
+import type { Room, Message, BridgeMessage } from "./types";
 import { nanoid } from "./nanoid";
 
 const DB_PATH = join(process.cwd(), ".latent-rooms.json");
+const BRIDGES_PATH = join(process.cwd(), ".latent-bridges.json");
+
+// ─── Bridge chat helpers ──────────────────────────────────────────────────────
+
+function readBridges(): Record<string, BridgeMessage[]> {
+  try { return JSON.parse(readFileSync(BRIDGES_PATH, "utf-8")); }
+  catch { return {}; }
+}
+
+function writeBridges(data: Record<string, BridgeMessage[]>) {
+  try { writeFileSync(BRIDGES_PATH, JSON.stringify(data), "utf-8"); }
+  catch (err) { console.error("[room-store] bridge write failed", err); }
+}
+
+export function getBridgeMessages(bridgeId: string): BridgeMessage[] {
+  return readBridges()[bridgeId] ?? [];
+}
+
+export function addBridgeMessage(bridgeId: string, msg: BridgeMessage): void {
+  const data = readBridges();
+  if (!data[bridgeId]) data[bridgeId] = [];
+  data[bridgeId].push(msg);
+  writeBridges(data);
+}
+
 
 // ─── Presence (in-memory per worker, ephemeral) ───────────────────────────────
 // Presence is inherently approximate when workers are isolated; tracking last-
