@@ -30,7 +30,7 @@ export async function callAI({ systemPrompt, userMessage, temperature = 0.4, max
         { role: 'user', content: typeof userMessage === 'string' ? userMessage : JSON.stringify(userMessage) }
       ],
       temperature,
-      max_tokens: maxTokens,
+      max_completion_tokens: maxTokens,
       response_format: { type: 'json_object' }
     });
 

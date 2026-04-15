@@ -22,11 +22,42 @@ export async function computePlacement(participants, routineHook, gapMinutes) {
   // Gather each participant's location context
   const participantContexts = participants.map(p => {
     const courses = JSON.parse(p.academic_contexts || '[]');
-    const hookContext = routineHook.context;
+    const hookContext = routineHook.context || '';
 
-    // Find the class that matches the hook context
-    const matchedClass = courses.find(c => c.course === hookContext);
-    const classBuilding = matchedClass?.building || null;
+    // Find the class building using multiple strategies:
+    // 1. Exact course code match
+    let matchedClass = courses.find(c => c.course === hookContext);
+
+    // 2. Course code mentioned inside the AI-generated context string
+    if (!matchedClass) {
+      matchedClass = courses.find(c => hookContext.includes(c.course));
+    }
+
+    // 3. Building name mentioned in the context string
+    let classBuilding = matchedClass?.building || null;
+    if (!classBuilding) {
+      const knownBuildings = ['Psych Hall', 'Econ Building', 'Science Hall', 'Tech Center',
+        'Liberal Arts', 'Fine Arts', 'Library East', 'Library West', 'Student Commons'];
+      for (const b of knownBuildings) {
+        if (hookContext.toLowerCase().includes(b.toLowerCase())) {
+          classBuilding = b;
+          break;
+        }
+      }
+    }
+
+    // 4. Fall back to hook location field
+    if (!classBuilding && routineHook.location) {
+      const loc = routineHook.location;
+      const knownBuildings = ['Psych Hall', 'Econ Building', 'Science Hall', 'Tech Center',
+        'Liberal Arts', 'Fine Arts', 'Library East', 'Library West', 'Student Commons'];
+      for (const b of knownBuildings) {
+        if (loc.toLowerCase().includes(b.toLowerCase())) {
+          classBuilding = b;
+          break;
+        }
+      }
+    }
 
     // Find the next class after the hook time
     const nextClass = findNextClass(courses, routineHook.day, routineHook.time);
