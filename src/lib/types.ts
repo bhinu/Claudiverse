@@ -1,42 +1,64 @@
-/** A single "truth" node in the latent space map. */
-export interface TruthNode {
+// ─── Anonymous Identity ───────────────────────────────────────────────────────
+
+export interface Identity {
   id: string;
-  text: string;
-  /** [x, y] in 0–100 semantic space */
-  coords: [number, number];
-  /** -1 (negative) → 0 (neutral) → 1 (positive) */
-  sentiment: number;
-  /** Short human-values label, e.g. "Career Anxiety" */
-  category: string;
-  /** True while awaiting AI processing */
-  pending: boolean;
+  name: string;   // e.g. "Neon Wolf"
+  color: string;  // hex, used for text & borders
+}
+
+// ─── Room ─────────────────────────────────────────────────────────────────────
+
+export interface Room {
+  id: string;
+  code: string;       // short join code e.g. "JADE-7"
+  name: string;       // e.g. "ECON 301"
+  messages: Message[];
+  presenceCount: number;
+  lat?: number;
+  lng?: number;
   createdAt: number;
 }
 
-/** An edge connecting two semantically similar nodes. */
+// ─── Message (truth) ─────────────────────────────────────────────────────────
+
+export interface Message {
+  id: string;
+  text: string;
+  authorId: string;
+  authorName: string;
+  authorColor: string;
+  /** Semantic position [0–100, 0–100]. null while AI is processing. */
+  coords: [number, number] | null;
+  /** -1 → 1 */
+  sentiment: number;
+  /** Short human-values label */
+  category: string;
+  resonances: number;
+  /** IDs of users who resonated */
+  resonatedBy: string[];
+  createdAt: number;
+  pending: boolean;
+}
+
+// ─── Real-time Events (SSE payload) ──────────────────────────────────────────
+
+export type RoomEvent =
+  | { type: "init"; room: Room }
+  | { type: "message_added"; message: Message }
+  | { type: "message_updated"; message: Message }
+  | { type: "presence"; count: number };
+
+// ─── Map edge + bridge (kept for ForceGraphMap) ──────────────────────────────
+
 export interface TruthEdge {
   id: string;
   sourceId: string;
   targetId: string;
-  /** 0–1, strength of semantic similarity */
   similarity: number;
 }
 
-/** A "Steelman Icebreaker" generated for a specific edge. */
 export interface Bridge {
   edgeId: string;
   question: string;
   loading: boolean;
-}
-
-/** Shape returned by the /api/process-truth endpoint. */
-export interface ProcessTruthResponse {
-  coords: [number, number];
-  sentiment: number;
-  category: string;
-}
-
-/** Shape returned by the /api/generate-bridge endpoint. */
-export interface GenerateBridgeResponse {
-  question: string;
 }

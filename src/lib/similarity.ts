@@ -1,24 +1,25 @@
-import type { TruthNode, TruthEdge } from "./types";
-import { nanoid } from "./nanoid";
+import type { TruthEdge } from "./types";
 
-/** Euclidean distance in the 0–100 semantic coordinate space. */
+/** Minimal node shape needed for edge computation. */
+export interface EdgeNode {
+  id: string;
+  coords: [number, number];
+  pending: boolean;
+}
+
 function distance(a: [number, number], b: [number, number]): number {
   return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2);
 }
 
-/** Convert distance to similarity (0–1). Max possible distance ≈ 141. */
 function toSimilarity(dist: number): number {
   return Math.max(0, 1 - dist / 141);
 }
 
 /**
- * Recompute all edges from the current node list.
- * Only creates edges above a similarity threshold to avoid visual noise.
+ * Recompute all edges from a list of positioned nodes.
+ * Only creates edges above the similarity threshold to avoid visual noise.
  */
-export function computeEdges(
-  nodes: TruthNode[],
-  threshold = 0.78
-): TruthEdge[] {
+export function computeEdges(nodes: EdgeNode[], threshold = 0.78): TruthEdge[] {
   const live = nodes.filter((n) => !n.pending);
   const edges: TruthEdge[] = [];
 
@@ -37,8 +38,5 @@ export function computeEdges(
     }
   }
 
-  // Keep only the strongest edges (cap at 40 for perf)
-  return edges
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, 40);
+  return edges.sort((a, b) => b.similarity - a.similarity).slice(0, 40);
 }

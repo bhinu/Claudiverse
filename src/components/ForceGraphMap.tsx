@@ -4,229 +4,188 @@
  * ForceGraphMap
  * -------------
  * Full-screen 2D force-graph visualization.
- * Nodes = "Energy Points" glowing by sentiment.
+ * Nodes = "Energy Points" glowing by sentiment (from live room messages).
  * Edges = "Bridges" (neon lines) between semantically similar nodes.
  * Clicking an edge opens the Steelman Icebreaker modal.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { useLatentHall } from "@/context/LatentHallContext";
-import type { TruthNode, TruthEdge } from "@/lib/types";
+import { useRoom } from "@/context/RoomContext";
+import type { TruthEdge, Message } from "@/lib/types";
 
-// react-force-graph-2d uses browser APIs – must be dynamically imported
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full w-full items-center justify-center text-slate-600 text-sm">
-      Loading graph…
+    <div className="flex h-full w-full items-center justify-center text-slate-700 text-sm">
+      Loading latent space…
     </div>
   ),
 });
 
-// ─── Colour helpers ────────────────────────────────────────────────────────────
+// ─── Colour helpers ───────────────────────────────────────────────────────────
 
-/** Maps a sentiment value (-1 → 1) to a neon colour. */
-function sentimentColor(sentiment: number, pending: boolean): string {
-  if (pending) return "#334155"; // slate-700
-  if (sentiment > 0.4) return "#10b981"; // emerald (positive)
-  if (sentiment > 0) return "#22d3ee"; // cyan (mildly positive)
-  if (sentiment > -0.4) return "#a855f7"; // purple (mildly negative)
-  return "#f43f5e"; // rose (negative)
+function sentimentColor(s: number, pending: boolean): string {
+  if (pending) return "#1e293b";
+  if (s > 0.4)  return "#34d399";
+  if (s > 0)    return "#22d3ee";
+  if (s > -0.4) return "#a78bfa";
+  return "#fb7185";
 }
 
-/** Converts a sentiment colour to a semi-transparent glow version. */
-function glowColor(color: string, alpha = 0.45): string {
+function glowRgba(color: string, a = 0.5): string {
   const map: Record<string, string> = {
-    "#10b981": `rgba(16,185,129,${alpha})`,
-    "#22d3ee": `rgba(34,211,238,${alpha})`,
-    "#a855f7": `rgba(168,85,247,${alpha})`,
-    "#f43f5e": `rgba(244,63,94,${alpha})`,
-    "#334155": `rgba(51,65,85,${alpha})`,
+    "#34d399": `rgba(52,211,153,${a})`,
+    "#22d3ee": `rgba(34,211,238,${a})`,
+    "#a78bfa": `rgba(167,139,250,${a})`,
+    "#fb7185": `rgba(251,113,133,${a})`,
+    "#1e293b": `rgba(30,41,59,${a})`,
   };
-  return map[color] ?? `rgba(255,255,255,${alpha})`;
+  return map[color] ?? `rgba(255,255,255,${a})`;
 }
 
-// ─── Graph node/link data adapters ───────────────────────────────────────────
+// ─── Graph adapters ───────────────────────────────────────────────────────────
 
 interface GNode {
-  id: string;
-  text: string;
-  sentiment: number;
-  category: string;
-  pending: boolean;
-  // force-graph positions (mutable)
-  x?: number;
-  y?: number;
-  fx?: number;
-  fy?: number;
+  id: string; text: string; authorName: string; authorColor: string;
+  sentiment: number; category: string; pending: boolean;
+  x?: number; y?: number; fx?: number; fy?: number;
 }
+interface GLink { id: string; source: string; target: string; similarity: number; }
 
-interface GLink {
-  id: string;
-  source: string;
-  target: string;
-  similarity: number;
-}
-
-function toGNodes(nodes: TruthNode[]): GNode[] {
-  return nodes.map((n) => ({
-    id: n.id,
-    text: n.text,
-    sentiment: n.sentiment,
-    category: n.category,
-    pending: n.pending,
-    // Pin nodes to their semantic coords (scaled to graph canvas)
-    fx: n.coords[0],
-    fy: n.coords[1],
-  }));
+function toGNodes(messages: Message[]): GNode[] {
+  return messages
+    .filter((m) => m.coords !== null)
+    .map((m) => ({
+      id: m.id, text: m.text, authorName: m.authorName, authorColor: m.authorColor,
+      sentiment: m.sentiment, category: m.category, pending: m.pending,
+      fx: m.coords![0], fy: m.coords![1],
+    }));
 }
 
 function toGLinks(edges: TruthEdge[]): GLink[] {
   return edges.map((e) => ({
-    id: e.id,
-    source: e.sourceId,
-    target: e.targetId,
-    similarity: e.similarity,
+    id: e.id, source: e.sourceId, target: e.targetId, similarity: e.similarity,
   }));
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ForceGraphMap() {
-  const { state, clickEdge } = useLatentHall();
+  const { state, clickEdge } = useRoom();
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ width: 800, height: 600 });
-  const [tick, setTick] = useState(0); // forces re-render for pulse animation
+  const [tick, setTick] = useState(0);
 
-  // Responsive resize
   useEffect(() => {
     const ro = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      setDims({
-        width: entry.contentRect.width,
-        height: entry.contentRect.height,
-      });
+      const r = entries[0].contentRect;
+      setDims({ width: r.width, height: r.height });
     });
     if (containerRef.current) ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, []);
 
-  // Pulse tick (every 1.2s) to animate pending nodes
+  // Pulse repaint ticker
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1200);
+    const id = setInterval(() => setTick((t) => t + 1), 900);
     return () => clearInterval(id);
   }, []);
 
   const graphData = {
-    nodes: toGNodes(state.nodes),
+    nodes: toGNodes(state.messages),
     links: toGLinks(state.edges),
   };
 
-  // ── Node canvas painter ──────────────────────────────────────────────────
+  // ── Node painter ────────────────────────────────────────────────────────────
   const nodeCanvasObject = useCallback(
     (node: GNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const x = node.x ?? 0;
       const y = node.y ?? 0;
       const color = sentimentColor(node.sentiment, node.pending);
-      const baseR = node.pending ? 4 : 6;
+      const baseR = node.pending ? 3.5 : 5.5;
+      const pulse = node.pending ? 1 + 0.25 * Math.sin((Date.now() / 500) * Math.PI) : 1;
+      const r = baseR * pulse;
 
-      // Pulse scale for pending nodes
-      const pulseScale = node.pending
-        ? 1 + 0.2 * Math.sin((Date.now() / 600) * Math.PI)
-        : 1;
-      const r = baseR * pulseScale;
-
-      // Outer glow
-      const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 3.5);
-      grd.addColorStop(0, glowColor(color, 0.6));
+      // Aura
+      const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
+      grd.addColorStop(0, glowRgba(color, 0.55));
       grd.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.beginPath();
-      ctx.arc(x, y, r * 3.5, 0, 2 * Math.PI);
-      ctx.fillStyle = grd;
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, r * 4, 0, Math.PI * 2);
+      ctx.fillStyle = grd; ctx.fill();
 
-      // Core circle
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, 2 * Math.PI);
-      ctx.fillStyle = color;
-      ctx.fill();
+      // Core
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
 
-      // Category label (visible at zoom > 1.4)
-      if (globalScale > 1.4 && !node.pending) {
-        ctx.font = `${10 / globalScale}px Inter, sans-serif`;
-        ctx.fillStyle = "rgba(226,232,240,0.75)";
+      // Author dot ring
+      if (!node.pending) {
+        ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, Math.PI * 2);
+        ctx.strokeStyle = `${node.authorColor}66`;
+        ctx.lineWidth = 1; ctx.stroke();
+      }
+
+      // Category label
+      if (globalScale > 1.5 && !node.pending) {
+        const fontSize = 9 / globalScale;
+        ctx.font = `${fontSize}px Inter, sans-serif`;
+        ctx.fillStyle = "rgba(148,163,184,0.8)";
         ctx.textAlign = "center";
-        ctx.fillText(node.category, x, y + r + 10 / globalScale);
+        ctx.fillText(node.category, x, y + r + fontSize + 2);
       }
     },
-    [tick] // tick dependency drives repaint for pulse
+    [tick]
   );
 
-  // ── Link canvas painter ──────────────────────────────────────────────────
-  const linkCanvasObject = useCallback(
-    (link: GLink, ctx: CanvasRenderingContext2D) => {
-      const src = link.source as unknown as GNode;
-      const tgt = link.target as unknown as GNode;
-      if (src?.x == null || tgt?.x == null || src?.y == null || tgt?.y == null) return;
+  // ── Link painter ────────────────────────────────────────────────────────────
+  const linkCanvasObject = useCallback((link: GLink, ctx: CanvasRenderingContext2D) => {
+    const src = link.source as unknown as GNode;
+    const tgt = link.target as unknown as GNode;
+    if (src?.x == null || tgt?.x == null || src?.y == null || tgt?.y == null) return;
 
-      const alpha = 0.3 + link.similarity * 0.5;
-      const width = 0.5 + link.similarity * 2;
+    // Gradient line
+    const grd = ctx.createLinearGradient(src.x, src.y, tgt.x, tgt.y);
+    const alpha = 0.25 + link.similarity * 0.55;
+    grd.addColorStop(0, `rgba(34,211,238,${alpha})`);
+    grd.addColorStop(1, `rgba(167,139,250,${alpha})`);
 
-      ctx.beginPath();
-      ctx.moveTo(src.x, src.y);
-      ctx.lineTo(tgt.x, tgt.y);
+    ctx.beginPath();
+    ctx.moveTo(src.x, src.y);
+    ctx.lineTo(tgt.x, tgt.y);
+    ctx.strokeStyle = grd;
+    ctx.lineWidth = 0.5 + link.similarity * 2.5;
+    ctx.shadowColor = "rgba(34,211,238,0.5)";
+    ctx.shadowBlur = 8;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }, []);
 
-      // Neon cyan bridge
-      ctx.strokeStyle = `rgba(0,212,255,${alpha})`;
-      ctx.lineWidth = width;
-      ctx.shadowColor = "rgba(0,212,255,0.6)";
-      ctx.shadowBlur = 6;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    },
-    []
-  );
+  const onLinkClick = useCallback((link: GLink) => clickEdge(link.id), [clickEdge]);
 
-  // ── Link click area (invisible wider stroke) ─────────────────────────────
-  const onLinkClick = useCallback(
-    (link: GLink) => {
-      clickEdge(link.id);
-    },
-    [clickEdge]
-  );
-
-  // ── Tooltip ──────────────────────────────────────────────────────────────
   const nodeLabel = useCallback(
-    (node: GNode) =>
-      node.pending
-        ? "Processing…"
-        : `<div style="max-width:220px;font-size:12px;line-height:1.4;padding:6px 8px;background:#0d1117;border:1px solid #21262d;border-radius:6px;color:#e2e8f0">${node.text}</div>`,
+    (node: GNode) => node.pending ? "Mapping…" :
+      `<div style="max-width:240px;font-size:12px;line-height:1.5;padding:8px 10px;background:#0f1520;border:1px solid rgba(34,211,238,0.2);border-radius:8px;color:#e2e8f0">
+        <div style="color:${node.authorColor};font-size:10px;margin-bottom:4px">${node.authorName}</div>
+        ${node.text}
+      </div>`,
     []
   );
 
   const linkLabel = useCallback(
-    () =>
-      `<div style="font-size:11px;padding:4px 8px;background:#0d1117;border:1px solid #00d4ff44;border-radius:4px;color:#00d4ff">Click to reveal icebreaker</div>`,
+    () => `<div style="font-size:11px;padding:4px 8px;background:#0f1520;border:1px solid rgba(34,211,238,0.3);border-radius:4px;color:#22d3ee">✦ Click to reveal icebreaker</div>`,
     []
   );
 
+  const liveNodes = state.messages.filter((m) => m.coords !== null);
+
   return (
     <div ref={containerRef} className="relative h-full w-full">
-      {state.nodes.length === 0 && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-600 pointer-events-none select-none">
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 8v4M12 16h.01" />
-          </svg>
-          <p className="text-sm">No truths yet. Submit one or seed demo data.</p>
+      {liveNodes.length === 0 && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-700 pointer-events-none select-none">
+          <div className="w-10 h-10 rounded-full border border-dashed border-slate-800 flex items-center justify-center">
+            <span className="text-slate-700 text-lg">✦</span>
+          </div>
+          <p className="text-xs text-center">Post a truth to begin mapping the field</p>
         </div>
       )}
       <ForceGraph2D
@@ -241,7 +200,6 @@ export default function ForceGraphMap() {
         onLinkClick={onLinkClick as never}
         nodeLabel={nodeLabel as never}
         linkLabel={linkLabel as never}
-        // Disable physics — nodes are pinned to semantic coords
         d3AlphaDecay={1}
         d3VelocityDecay={1}
         cooldownTicks={0}
@@ -249,7 +207,7 @@ export default function ForceGraphMap() {
         nodePointerAreaPaint={((node: GNode, color: string, ctx: CanvasRenderingContext2D) => {
           ctx.fillStyle = color;
           ctx.beginPath();
-          ctx.arc(node.x ?? 0, node.y ?? 0, 10, 0, 2 * Math.PI);
+          ctx.arc(node.x ?? 0, node.y ?? 0, 12, 0, Math.PI * 2);
           ctx.fill();
         }) as never}
       />

@@ -1,134 +1,96 @@
 "use client";
 
-/**
- * BridgeModal
- * -----------
- * Framer Motion modal that surfaces the "Steelman Icebreaker" question
- * when a user clicks a Bridge (edge) between two nodes.
- */
-
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles } from "lucide-react";
-import { useLatentHall } from "@/context/LatentHallContext";
+import { useRoom } from "@/context/RoomContext";
 
 export default function BridgeModal() {
-  const { state, dispatch } = useLatentHall();
-  const { activeEdgeId, bridges, edges, nodes } = state;
+  const { state, dispatch } = useRoom();
+  const { activeEdgeId, bridges, edges, messages } = state;
 
   const isOpen = !!activeEdgeId;
   const bridge = activeEdgeId ? bridges[activeEdgeId] : null;
   const edge = activeEdgeId ? edges.find((e) => e.id === activeEdgeId) : null;
-  const nodeA = edge ? nodes.find((n) => n.id === edge.sourceId) : null;
-  const nodeB = edge ? nodes.find((n) => n.id === edge.targetId) : null;
+  const msgA = edge ? messages.find((m) => m.id === edge.sourceId) : null;
+  const msgB = edge ? messages.find((m) => m.id === edge.targetId) : null;
 
-  function close() {
-    dispatch({ type: "CLOSE_MODAL" });
-  }
+  function close() { dispatch({ type: "CLOSE_MODAL" }); }
 
   return (
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop */}
-          <motion.div
-            key="backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+          <motion.div key="backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="modal-backdrop fixed inset-0 z-40 bg-black/60"
+            className="fixed inset-0 z-40 bg-black/70"
+            style={{ backdropFilter: "blur(6px)" }}
             onClick={close}
           />
 
-          {/* Panel */}
-          <motion.div
-            key="modal"
-            initial={{ opacity: 0, scale: 0.92, y: 24 }}
+          <motion.div key="modal"
+            initial={{ opacity: 0, scale: 0.9, y: 28 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 16 }}
-            transition={{ type: "spring", stiffness: 320, damping: 28 }}
-            className="fixed inset-x-4 bottom-6 z-50 mx-auto max-w-md"
+            exit={{ opacity: 0, scale: 0.88, y: 20 }}
+            transition={{ type: "spring", stiffness: 340, damping: 30 }}
+            className="fixed inset-x-4 bottom-20 z-50 mx-auto max-w-md"
           >
-            <div
-              className="relative rounded-2xl p-6 border overflow-hidden"
+            <div className="glass-bright relative rounded-2xl p-6 overflow-hidden"
               style={{
-                background:
-                  "linear-gradient(135deg, #0d1117 0%, #161b22 100%)",
-                borderColor: "rgba(0,212,255,0.25)",
-                boxShadow:
-                  "0 0 0 1px rgba(0,212,255,0.08), 0 24px 60px rgba(0,0,0,0.7), 0 0 40px rgba(0,212,255,0.08)",
-              }}
-            >
-              {/* Corner glow */}
-              <div
-                className="absolute -top-10 -right-10 h-40 w-40 rounded-full pointer-events-none"
-                style={{
-                  background:
-                    "radial-gradient(circle, rgba(0,212,255,0.12) 0%, transparent 70%)",
-                }}
-              />
+                borderColor: "rgba(34,211,238,0.25)",
+                boxShadow: "0 0 0 1px rgba(34,211,238,0.08), 0 32px 80px rgba(0,0,0,0.8), 0 0 60px rgba(34,211,238,0.06)",
+              }}>
 
-              {/* Close button */}
-              <button
-                onClick={close}
-                className="absolute top-3 right-3 text-slate-600 hover:text-slate-300 transition-colors"
-              >
-                <X size={16} />
+              {/* Corner aurora */}
+              <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full pointer-events-none"
+                style={{ background: "radial-gradient(circle, rgba(34,211,238,0.1) 0%, transparent 70%)" }} />
+
+              <button onClick={close}
+                className="absolute top-3.5 right-3.5 text-slate-600 hover:text-slate-300 transition-colors p-1 rounded-md hover:bg-white/5">
+                <X size={14} />
               </button>
 
               {/* Header */}
               <div className="flex items-center gap-2 mb-4">
-                <Sparkles size={14} className="text-cyan-400" />
-                <span
-                  className="text-xs font-semibold uppercase tracking-widest"
-                  style={{ color: "#00d4ff", textShadow: "0 0 8px rgba(0,212,255,0.5)" }}
-                >
+                <Sparkles size={13} className="text-cyan-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-glow-cyan"
+                  style={{ color: "#22d3ee" }}>
                   Bridge Icebreaker
                 </span>
               </div>
 
-              {/* Two truth snippets */}
-              {nodeA && nodeB && (
+              {/* Two truths */}
+              {msgA && msgB && (
                 <div className="flex gap-2 mb-5">
-                  <TruthChip text={nodeA.text} category={nodeA.category} />
-                  <div className="flex items-center text-cyan-800 text-lg font-light">
-                    ↔
-                  </div>
-                  <TruthChip text={nodeB.text} category={nodeB.category} />
+                  <TruthChip text={msgA.text} category={msgA.category} color={msgA.authorColor} />
+                  <div className="flex items-center text-slate-700 text-base shrink-0 mt-1">↔</div>
+                  <TruthChip text={msgB.text} category={msgB.category} color={msgB.authorColor} />
                 </div>
               )}
 
-              {/* The question */}
-              {bridge?.loading ? (
-                <LoadingDots />
-              ) : (
-                <motion.p
-                  key={bridge?.question}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-base font-medium leading-relaxed text-slate-100"
-                  style={{ textShadow: "0 1px 8px rgba(0,0,0,0.4)" }}
-                >
+              {bridge?.loading ? <LoadingDots /> : (
+                <motion.p key={bridge?.question}
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                  className="text-sm font-medium leading-relaxed text-slate-100">
                   &ldquo;{bridge?.question}&rdquo;
                 </motion.p>
               )}
 
-              {/* Similarity score */}
               {edge && !bridge?.loading && (
-                <div className="mt-4 flex items-center gap-2">
-                  <div className="flex-1 h-[2px] rounded-full bg-[#21262d] overflow-hidden">
+                <div className="mt-4 flex items-center gap-2.5">
+                  <div className="flex-1 h-px rounded-full overflow-hidden bg-white/5">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${edge.similarity * 100}%` }}
-                      transition={{ duration: 0.8, ease: "easeOut" }}
+                      transition={{ duration: 0.9, ease: "easeOut" }}
                       className="h-full rounded-full"
                       style={{
-                        background: "linear-gradient(90deg, #00d4ff, #a855f7)",
-                        boxShadow: "0 0 6px rgba(0,212,255,0.5)",
+                        background: "linear-gradient(90deg, #22d3ee, #a78bfa)",
+                        boxShadow: "0 0 8px rgba(34,211,238,0.5)",
                       }}
                     />
                   </div>
-                  <span className="text-[11px] text-slate-600 tabular-nums">
+                  <span className="text-[11px] text-slate-600 tabular-nums shrink-0">
                     {Math.round(edge.similarity * 100)}% resonance
                   </span>
                 </div>
@@ -141,11 +103,12 @@ export default function BridgeModal() {
   );
 }
 
-function TruthChip({ text, category }: { text: string; category: string }) {
+function TruthChip({ text, category, color }: { text: string; category: string; color: string }) {
   return (
-    <div className="flex-1 min-w-0 rounded-lg border border-[#21262d] bg-[#050810] px-2.5 py-2">
-      <div className="text-[10px] text-slate-600 mb-0.5 truncate">{category}</div>
-      <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{text}</p>
+    <div className="flex-1 min-w-0 rounded-lg px-2.5 py-2"
+      style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${color}22` }}>
+      <div className="text-[10px] mb-0.5 truncate" style={{ color: `${color}99` }}>{category}</div>
+      <p className="text-[11px] text-slate-400 line-clamp-3 leading-relaxed">{text}</p>
     </div>
   );
 }
@@ -155,11 +118,10 @@ function LoadingDots() {
     <div className="flex items-center gap-2 py-2">
       <span className="text-xs text-slate-600">Generating icebreaker</span>
       {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
+        <motion.span key={i}
           animate={{ opacity: [0.2, 1, 0.2] }}
           transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-          className="inline-block w-1 h-1 rounded-full bg-cyan-400"
+          className="w-1 h-1 rounded-full inline-block bg-cyan-400"
         />
       ))}
     </div>
