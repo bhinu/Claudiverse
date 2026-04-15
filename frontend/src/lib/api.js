@@ -35,6 +35,7 @@ export const api = {
   declineSuggestion: (id, reason) => request(`/suggestions/${id}/decline`, { method: 'POST', body: { reason } }),
   requestCloserSpot: (id) => request(`/suggestions/${id}/closer-spot`, { method: 'POST' }),
   getStudentSuggestions: (studentId) => request(`/suggestions/student/${studentId}`),
+  getEscalation: (studentId) => request(`/suggestions/escalate/${studentId}`, { method: 'POST' }),
 
   // Interactions
   getInteraction: (id) => request(`/interactions/${id}`),

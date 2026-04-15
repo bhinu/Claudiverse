@@ -6,6 +6,8 @@ import { composeMatch } from '../ai/matchComposer.js';
 import { generateInvitation } from '../ai/invitationGen.js';
 import { planContinuity } from '../ai/continuityPlanner.js';
 import { computePlacement } from '../ai/placementEngine.js';
+import { evaluateEscalation } from '../ai/escalationEngine.js';
+import { track } from '../instrumentation.js';
 
 const router = Router();
 
@@ -60,8 +62,10 @@ router.post('/generate', async (req, res) => {
   }
 
   // Step 0: Preflight validation
+  track.preflightStarted(student_id);
   const missingFields = preflightValidation(student);
   if (missingFields.length > 0) {
+    track.preflightFailedMissingData(student_id, missingFields);
     return res.json({
       status: 'missing_required_data',
       missing_fields: missingFields,
@@ -70,11 +74,14 @@ router.post('/generate', async (req, res) => {
   }
 
   try {
+    track.generationStarted(student_id);
+
     // Step 1: Find routine hooks
     const hookResult = await findRoutineHooks(student);
     const bestHook = hookResult.candidate_hooks?.[0];
 
     if (!bestHook) {
+      track.generationNoAnchorFound(student_id, 'no_routine_hooks');
       return res.json({
         status: 'no_anchor_for_class',
         reason: 'no_routine_hooks',
@@ -92,6 +99,7 @@ router.post('/generate', async (req, res) => {
     });
 
     if (candidatePeers.length === 0) {
+      track.generationNoAnchorFound(student_id, 'no_peer_overlap');
       return res.json({
         status: 'no_anchor_for_class',
         reason: 'no_peer_overlap',
@@ -163,6 +171,8 @@ router.post('/generate', async (req, res) => {
 
     const suggestion = db.prepare('SELECT * FROM suggestions WHERE id = ?').get(suggestionId);
 
+    track.generationSucceeded(student_id, suggestionId);
+
     return res.json({
       status: 'anchor_ready',
       suggestion: {
@@ -180,6 +190,7 @@ router.post('/generate', async (req, res) => {
     });
   } catch (err) {
     console.error(`[ANCHOR_GENERATION_ERROR] ${err.message}`, err.stack);
+    track.generationServiceError(student_id, classifyError(err));
 
     return res.json({
       status: 'service_error',
@@ -315,6 +326,55 @@ router.get('/student/:studentId', (req, res) => {
     placement_data: JSON.parse(s.placement_data || '{}'),
     relevance_reasons: JSON.parse(s.relevance_reasons || '[]')
   })));
+});
+
+// Evaluate escalation for a student
+router.post('/escalate/:studentId', async (req, res) => {
+  try {
+    const db = getDb();
+    const student = db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.studentId);
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    // Build history from suggestion data
+    const suggestions = db.prepare(
+      'SELECT * FROM suggestions WHERE student_id = ?'
+    ).all(req.params.studentId);
+
+    const declines = suggestions.filter(s => s.status === 'declined').length;
+
+    // Anchors use a join table (anchor_participants), not a direct student_id
+    const anchors = db.prepare(
+      `SELECT a.* FROM anchors a
+       JOIN anchor_participants ap ON a.id = ap.anchor_id
+       WHERE ap.student_id = ?`
+    ).all(req.params.studentId);
+
+    const stalledAnchors = anchors.filter(a => a.anchor_health_state === 'stalled').length;
+
+    const noMatchAttempts = suggestions.filter(s => !s.participants || s.participants === '[]').length;
+
+    const history = {
+      declines,
+      stalled_anchors: stalledAnchors,
+      no_match_attempts: noMatchAttempts
+    };
+
+    const escalation = await evaluateEscalation(student, history);
+
+    if (escalation.escalation_needed) {
+      track.escalationTriggered(req.params.studentId, escalation.escalation_type);
+    }
+
+    res.json(escalation);
+  } catch (err) {
+    console.error(`[ESCALATION_ERROR] ${err.message}`);
+    res.json({
+      escalation_needed: false,
+      escalation_type: null,
+      actions: [],
+      message: null
+    });
+  }
 });
 
 export default router;

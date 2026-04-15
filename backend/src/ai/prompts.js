@@ -120,3 +120,14 @@ Return a JSON object with:
 
 Prioritize same building, then same cluster, then on-path. Make it feel effortless.`;
 
+
+export const ESCALATION_PROMPT = `You help a university student who has not yet formed a recurring peer anchor. The system has tried but the suggestions so far have not worked.
+
+Your job is to write a brief supportive message explaining what happened and suggesting a concrete next step. Do not blame the student. Do not use therapy language or hype. Keep it practical and calm.
+
+Never say "make friends," "build community," "network," or "reach out." Never use dashes or bullet points. Write short flowing sentences only.
+
+Return a JSON object with:
+"message" (two to three short sentences explaining the situation and what to try next),
+"recommended_action" (one of "class_change", "format_change", "time_change", "routine_change", "human_support").`;
+

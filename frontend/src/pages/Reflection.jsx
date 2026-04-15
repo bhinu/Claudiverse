@@ -45,17 +45,32 @@ export default function Reflection() {
         <h1>{allPositive ? "You\u2019ve started an anchor." : "Noted. We will adjust."}</h1>
         <p style={{ marginTop: '12px', maxWidth: '320px', marginLeft: 'auto', marginRight: 'auto' }}>
           {allPositive
-            ? 'You now have a recurring touchpoint in your week. Small repeated contact is how campus starts feeling familiar.'
-            : "We will find a better fit for you. No pressure. We'll try a different approach next time."
+            ? 'This now lives in your week. Small repeated contact is how campus starts feeling familiar.'
+            : "We will find a better fit for you. No pressure."
           }
         </p>
-        <div className="btn-group vertical" style={{ marginTop: '32px' }}>
+
+        {allPositive && answers.same_group_preferred && (
+          <div className="card card-accent animate-in stagger-1" style={{ marginTop: '24px', textAlign: 'left' }}>
+            <div className="card-label">Coming up next</div>
+            <div className="card-value">Same time next week. We will remind you.</div>
+          </div>
+        )}
+
+        <div className="btn-group vertical" style={{ marginTop: '24px' }}>
           <button className="btn btn-primary" onClick={() => navigate('/')}>
             Go home
           </button>
-          <button className="btn btn-ghost" onClick={() => navigate('/anchors')}>
-            See my anchors
-          </button>
+          {allPositive && (
+            <button className="btn btn-secondary" onClick={() => navigate('/anchors')}>
+              See my anchors
+            </button>
+          )}
+          {!allPositive && (
+            <button className="btn btn-secondary" onClick={() => navigate('/support')}>
+              Try something different
+            </button>
+          )}
         </div>
       </div>
     );
