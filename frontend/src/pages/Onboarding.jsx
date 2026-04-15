@@ -231,14 +231,14 @@ export default function Onboarding() {
     );
   }
 
-  // Error fallback
+  // Error fallback — never show raw technical errors
   if (error) {
     return (
       <div className="animate-in" style={{ textAlign: 'center', marginTop: '64px' }}>
-        <div style={{ fontSize: '2rem', marginBottom: '16px' }}>⚠</div>
-        <h3>We need one more thing to find a useful anchor.</h3>
-        <p style={{ marginTop: '8px', maxWidth: '280px', margin: '8px auto 24px' }}>
-          {error || 'Could not generate a result with the current data.'}
+        <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>⚡</div>
+        <h2 style={{ marginBottom: '8px' }}>Something went wrong on our side.</h2>
+        <p style={{ color: 'var(--text-muted)', maxWidth: '280px', margin: '0 auto 24px' }}>
+          Your preferences are saved. Pick a different class or try again.
         </p>
         <div className="btn-group vertical" style={{ maxWidth: '300px', margin: '0 auto' }}>
           <button className="btn btn-primary btn-block" onClick={() => { setError(null); setStep(5); }}>
