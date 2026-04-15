@@ -1,0 +1,16 @@
+{
+  "name": "anchor-os",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Anchor OS — University social anchoring product",
+  "scripts": {
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "backend": "cd backend && node src/index.js",
+    "frontend": "cd frontend && npm run dev",
+    "seed": "cd backend && node src/db/seed.js",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -6,6 +6,16 @@
 # Dependencies
 node_modules/
 
+# Database
+*.db
+*.db-wal
+*.db-shm
+backend/data/
+
+# Build output
+dist/
+.vite/
+
 # OS files
 .DS_Store
 Thumbs.db

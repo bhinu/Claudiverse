@@ -1,0 +1,18 @@
+{
+  "name": "anchor-os-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Anchor OS backend — Express API + AI modules",
+  "scripts": {
+    "start": "node src/index.js",
+    "seed": "node src/db/seed.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "openai": "^4.82.0"
+  }
+}
