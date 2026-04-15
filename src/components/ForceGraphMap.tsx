@@ -9,7 +9,7 @@
  * Clicking an edge opens the Steelman Icebreaker modal.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRoom } from "@/context/RoomContext";
 import type { TruthEdge, Message } from "@/lib/types";
@@ -59,12 +59,15 @@ function toGNodes(messages: Message[], dims: { width: number; height: number }):
   const usableH = dims.height * (1 - 2 * pad);
   return messages
     .filter((m) => m.coords !== null)
-    .map((m) => ({
-      id: m.id, text: m.text, authorName: m.authorName, authorColor: m.authorColor,
-      sentiment: m.sentiment, category: m.category, pending: m.pending,
-      fx: dims.width * pad + (m.coords![0] / 100) * usableW,
-      fy: dims.height * pad + (m.coords![1] / 100) * usableH,
-    }));
+    .map((m) => {
+      const px = dims.width * pad + (m.coords![0] / 100) * usableW;
+      const py = dims.height * pad + (m.coords![1] / 100) * usableH;
+      return {
+        id: m.id, text: m.text, authorName: m.authorName, authorColor: m.authorColor,
+        sentiment: m.sentiment, category: m.category, pending: m.pending,
+        x: px, y: py, fx: px, fy: py,
+      };
+    });
 }
 
 function toGLinks(edges: TruthEdge[]): GLink[] {
@@ -96,10 +99,10 @@ export default function ForceGraphMap() {
     return () => clearInterval(id);
   }, []);
 
-  const graphData = {
+  const graphData = useMemo(() => ({
     nodes: toGNodes(state.messages, dims),
     links: toGLinks(state.edges),
-  };
+  }), [state.messages, state.edges, dims]);
 
   // ── Node painter ────────────────────────────────────────────────────────────
   const nodeCanvasObject = useCallback(
