@@ -42,11 +42,14 @@ export default function InteractionDetail() {
     );
   }
 
+  const placement = interaction.placement_data;
+  const myWalk = placement?.walk_minutes_by_participant?.[studentId];
+
   return (
     <div className="animate-in">
       <div className="page-header" style={{ marginTop: '32px' }}>
         <p className="text-accent" style={{ fontWeight: 500, marginBottom: '8px' }}>Your anchor is set</p>
-        <h1>Here's everything you need.</h1>
+        <h1>Here is everything you need.</h1>
       </div>
 
       <div className="card card-accent animate-in stagger-1">
@@ -54,9 +57,53 @@ export default function InteractionDetail() {
         <div className="card-value">{interaction.scheduled_at}</div>
       </div>
 
+      {/* Location card with placement details */}
       <div className="card animate-in stagger-2">
-        <div className="card-label">Where</div>
-        <div className="card-value">{interaction.location || 'Will be shared soon'}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+          <span style={{ fontSize: '1.3rem' }}>📍</span>
+          <div>
+            <div className="card-label">Where</div>
+            <div className="card-value">{interaction.location || 'Will be shared soon'}</div>
+          </div>
+        </div>
+
+        {/* Walking time */}
+        {myWalk !== undefined && (
+          <div className="placement-detail">
+            <span className="placement-icon">🚶</span>
+            <span className="placement-text">
+              {myWalk === 0
+                ? 'Same building as your class'
+                : `${myWalk} minute${myWalk !== 1 ? 's' : ''} from your class`
+              }
+            </span>
+          </div>
+        )}
+
+        {/* Fit reason */}
+        {placement?.fit_reason && (
+          <div className="placement-detail">
+            <span className="placement-icon">✓</span>
+            <span className="placement-text">{placement.fit_reason}</span>
+          </div>
+        )}
+
+        {/* Time fit */}
+        {placement?.time_fit_message && (
+          <div className="placement-detail">
+            <span className="placement-icon">◷</span>
+            <span className="placement-text">{placement.time_fit_message}</span>
+          </div>
+        )}
+
+        {/* Route type */}
+        {placement?.route_type && placement.route_type !== 'unknown' && (
+          <div style={{ marginTop: '6px' }}>
+            <span className={`badge badge-route-${placement.route_type}`}>
+              {formatRouteType(placement.route_type)}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="card animate-in stagger-3">
@@ -71,7 +118,7 @@ export default function InteractionDetail() {
 
       {interaction.participants && interaction.participants.length > 0 && (
         <div className="card animate-in">
-          <div className="card-label">Who you'll meet</div>
+          <div className="card-label">Who you will meet</div>
           {interaction.participants.map((p, i) => (
             <p key={i} style={{ marginTop: i > 0 ? '4px' : 0, color: 'var(--text-primary)' }}>
               {p.name} <span className="text-muted">({p.cohort_type})</span>
@@ -80,10 +127,11 @@ export default function InteractionDetail() {
         </div>
       )}
 
+      {/* Arrival instructions — uses placement arrival_note */}
       <div className="card animate-in" style={{ borderColor: 'var(--amber)', borderWidth: '1px' }}>
         <div className="card-label" style={{ color: 'var(--amber)' }}>When you arrive</div>
         <p style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-          {interaction.arrival_instructions || 'Say your name and answer the first prompt on screen.'}
+          {placement?.arrival_note || interaction.arrival_instructions || 'Say your name and answer the first prompt on screen.'}
         </p>
       </div>
 
@@ -105,9 +153,19 @@ export default function InteractionDetail() {
           Start interaction
         </button>
         <button className="btn btn-ghost btn-block" onClick={() => navigate('/')}>
-          I'll come back later
+          I will come back later
         </button>
       </div>
     </div>
   );
+}
+
+function formatRouteType(routeType) {
+  const labels = {
+    same_building: 'Same building',
+    same_cluster: 'Same area',
+    on_path: 'On your path',
+    short_detour: 'Short detour'
+  };
+  return labels[routeType] || routeType;
 }

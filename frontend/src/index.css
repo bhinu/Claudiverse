@@ -653,6 +653,48 @@ p {
   color: var(--text-inverse);
 }
 
+/* ---------- Placement details ---------- */
+.placement-detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px 0;
+}
+
+.placement-icon {
+  font-size: 0.85rem;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.placement-text {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.badge-route-same_building {
+  background: rgba(109, 213, 140, 0.15);
+  color: var(--health-stable);
+}
+
+.badge-route-same_cluster {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.badge-route-on_path {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.badge-route-short_detour {
+  background: rgba(160, 160, 184, 0.15);
+  color: var(--text-secondary);
+}
+
 /* ---------- Responsive ---------- */
 @media (min-width: 768px) {
   .app-content {

@@ -5,6 +5,7 @@ import { findRoutineHooks } from '../ai/hookEngine.js';
 import { composeMatch } from '../ai/matchComposer.js';
 import { generateInvitation } from '../ai/invitationGen.js';
 import { planContinuity } from '../ai/continuityPlanner.js';
+import { computePlacement } from '../ai/placementEngine.js';
 
 const router = Router();
 
@@ -41,36 +42,65 @@ router.post('/generate', async (req, res, next) => {
     // Step 3: Compose match via AI
     const matchResult = await composeMatch(student, bestHook, candidatePeers);
 
-    // Step 4: Generate invitation via AI
-    const invitation = await generateInvitation(matchResult, bestHook, bestHook.hook_type === 'post_class_gap' ? 'recap' : 'study');
+    // Step 4: Compute placement — friction-aware location selection
+    const matchedParticipantIds = matchResult.participant_ids || [student_id];
+    const matchedParticipants = matchedParticipantIds
+      .map(pid => pid === student_id ? student : allStudents.find(s => s.id === pid))
+      .filter(Boolean);
 
-    // Step 5: Plan continuity via AI
+    // Compute gap minutes from the hook
+    const gapMinutes = bestHook.duration_minutes ? bestHook.duration_minutes + 10 : 25;
+
+    const placement = await computePlacement(matchedParticipants, bestHook, gapMinutes);
+
+    // If placement needs clarification, return that instead
+    if (placement.clarification_needed) {
+      return res.json({
+        suggestion: null,
+        clarification_needed: true,
+        clarification_prompt: placement.clarification_prompt,
+        message: placement.clarification_prompt
+      });
+    }
+
+    // Use placement location instead of generic hook location
+    const finalLocation = placement.recommended_location || bestHook.location || 'TBD';
+
+    // Step 5: Generate invitation via AI — now with placement context
+    const invitation = await generateInvitation(
+      { ...matchResult, location: finalLocation, placement },
+      { ...bestHook, location: finalLocation },
+      bestHook.hook_type === 'post_class_gap' ? 'recap' : 'study'
+    );
+
+    // Step 6: Plan continuity via AI
     const continuity = await planContinuity(
-      { hook: bestHook, match: matchResult, purpose: 'recap' },
+      { hook: bestHook, match: matchResult, purpose: 'recap', location: finalLocation },
       { day: bestHook.day, time: bestHook.time, context: bestHook.context },
       { format: matchResult.match_type, participants: matchResult.participant_ids?.length || 2 }
     );
 
-    // Save suggestion
+    // Save suggestion with placement data
     const suggestionId = `sug-${randomUUID().slice(0, 8)}`;
     db.prepare(`
       INSERT INTO suggestions (id, student_id, routine_hook, participants, purpose, location,
         duration_minutes, invitation_title, invitation_body, cta_primary, cta_secondary,
-        continuity_plan, confidence_score, relevance_reasons)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        continuity_plan, placement_data, confidence_score, relevance_reasons)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       suggestionId,
       student_id,
       JSON.stringify(bestHook),
       JSON.stringify(matchResult.participant_ids || []),
       bestHook.hook_type === 'post_class_gap' ? 'recap' : 'study',
-      bestHook.location || 'TBD',
+      finalLocation,
       bestHook.duration_minutes || 10,
       invitation.title,
       invitation.body,
       invitation.cta_primary || 'Join',
       invitation.cta_secondary || 'Pick another time',
       JSON.stringify(continuity),
+      JSON.stringify(placement),
       matchResult.continuity_probability || 0.5,
       JSON.stringify(matchResult.why_this_match || [])
     );
@@ -83,10 +113,12 @@ router.post('/generate', async (req, res, next) => {
         routine_hook: JSON.parse(suggestion.routine_hook || '{}'),
         participants: JSON.parse(suggestion.participants || '[]'),
         continuity_plan: JSON.parse(suggestion.continuity_plan || '{}'),
+        placement_data: JSON.parse(suggestion.placement_data || '{}'),
         relevance_reasons: JSON.parse(suggestion.relevance_reasons || '[]')
       },
       match: matchResult,
       invitation,
+      placement,
       continuity
     });
   } catch (err) {
@@ -107,6 +139,7 @@ router.post('/:id/accept', (req, res, next) => {
     // Create an interaction
     const interactionId = `int-${randomUUID().slice(0, 8)}`;
     const hook = JSON.parse(suggestion.routine_hook || '{}');
+    const placement = JSON.parse(suggestion.placement_data || '{}');
 
     db.prepare(`
       INSERT INTO interactions (id, suggestion_id, participants, scheduled_at, location,
@@ -121,14 +154,55 @@ router.post('/:id/accept', (req, res, next) => {
       suggestion.duration_minutes,
       suggestion.purpose,
       'What part of today felt most useful or confusing?',
-      `Head to ${suggestion.location}. Say your name and start with the prompt on screen.`
+      placement.arrival_note || `Head to ${suggestion.location}. Say your name and start with the prompt on screen.`
     );
 
     const interaction = db.prepare('SELECT * FROM interactions WHERE id = ?').get(interactionId);
     res.json({
       ...interaction,
-      participants: JSON.parse(interaction.participants || '[]')
+      participants: JSON.parse(interaction.participants || '[]'),
+      placement_data: placement
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Request a closer spot for a suggestion
+router.post('/:id/closer-spot', async (req, res, next) => {
+  try {
+    const db = getDb();
+    const suggestion = db.prepare('SELECT * FROM suggestions WHERE id = ?').get(req.params.id);
+    if (!suggestion) return res.status(404).json({ error: 'Suggestion not found' });
+
+    const placement = JSON.parse(suggestion.placement_data || '{}');
+
+    if (placement.fallback_location) {
+      // Use the pre-computed fallback
+      db.prepare('UPDATE suggestions SET location = ?, placement_data = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run(
+          placement.fallback_location,
+          JSON.stringify({
+            ...placement,
+            recommended_location: placement.fallback_location,
+            recommended_building: placement.fallback_building,
+            fallback_location: null,
+            fallback_building: null,
+            fit_reason: `Switched to ${placement.fallback_location} for a shorter walk.`
+          }),
+          req.params.id
+        );
+
+      res.json({
+        location: placement.fallback_location,
+        message: `Moved to ${placement.fallback_location} for a shorter walk.`
+      });
+    } else {
+      res.json({
+        location: suggestion.location,
+        message: 'This is already the closest option we found.'
+      });
+    }
   } catch (err) {
     next(err);
   }
@@ -161,6 +235,7 @@ router.get('/student/:studentId', (req, res) => {
     routine_hook: JSON.parse(s.routine_hook || '{}'),
     participants: JSON.parse(s.participants || '[]'),
     continuity_plan: JSON.parse(s.continuity_plan || '{}'),
+    placement_data: JSON.parse(s.placement_data || '{}'),
     relevance_reasons: JSON.parse(s.relevance_reasons || '[]')
   })));
 });

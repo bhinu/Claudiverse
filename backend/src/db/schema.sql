@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS suggestions (
   cta_primary TEXT DEFAULT 'Join',
   cta_secondary TEXT DEFAULT 'Pick another time',
   continuity_plan TEXT DEFAULT '{}',                 -- JSON object
+  placement_data TEXT DEFAULT '{}',                  -- JSON: placement engine output
   confidence_score REAL DEFAULT 0.0,
   relevance_reasons TEXT DEFAULT '[]',               -- JSON array
   status TEXT DEFAULT 'pending',                     -- pending, accepted, declined, rescheduled
